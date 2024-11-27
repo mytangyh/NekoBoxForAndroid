@@ -577,4 +577,8 @@
     <string name="action_url">Custom Url</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="url_empty">url  is empty</string>
+    <string name="loading">loading</string>
+    <string name="error_no_response">no response</string>
+    <string name="no_proxies_found_in_response">no proxies</string>
 </resources>

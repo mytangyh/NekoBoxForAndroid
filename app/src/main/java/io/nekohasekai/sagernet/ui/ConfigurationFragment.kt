@@ -64,13 +64,17 @@ import moe.matsuri.nb4a.proxy.neko.NekoJSInterface
 import moe.matsuri.nb4a.proxy.neko.NekoSettingActivity
 import moe.matsuri.nb4a.proxy.neko.canShare
 import moe.matsuri.nb4a.proxy.shadowtls.ShadowTLSSettingsActivity
+import okhttp3.OkHttpClient
 import okhttp3.internal.closeQuietly
+import okhttp3.Request
+import org.json.JSONObject
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.UnknownHostException
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 import kotlin.collections.set
@@ -440,19 +444,16 @@ class ConfigurationFragment @JvmOverloads constructor(
                     val editText = EditText(context)
                     editText.hint = "URL"
                     addView(editText)
-                    dialog = MaterialAlertDialogBuilder(context).setTitle(R.string.action_url)
+                    dialog = MaterialAlertDialogBuilder(context)
+                        .setTitle(R.string.action_url)
                         .setView(this)
-                        .setPositiveButton(R.string.ok) { _,_ ->
+                        .setPositiveButton(R.string.ok) { _, _ ->
                             val url = editText.text.toString()
-                            if (url.isNotBlank()) {
-//                                (requireActivity() as MainActivity).importSubscription(Uri.parse(url))
-                                Toast.makeText(requireContext(), "URL: $url", Toast.LENGTH_SHORT).show()
-                            }
+                            importFromUrl(url)
                         }
                         .setNegativeButton(R.string.cancel, null)
                         .show()
                 }
-
             }
 
             R.id.action_update_subscription -> {
@@ -1740,5 +1741,88 @@ class ConfigurationFragment @JvmOverloads constructor(
             searchView.onActionViewCollapsed()
             searchView.clearFocus()
         }
+
+    private fun importFromUrl(url: String) {
+        if (url.isBlank()) {
+            snackbar(getString(R.string.url_empty)).show()
+            return
+        }
+
+        runOnDefaultDispatcher {
+            try {
+                // 显示加载进度对话框
+                val dialog = onMainDispatcher {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.loading)
+                        .setMessage(R.string.loading)
+                        .setCancelable(false)
+                        .show()
+                }
+
+                // 执行网络请求
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(10, TimeUnit.SECONDS)
+                    .build()
+                
+                val request = Request.Builder()
+                    .url(url)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val jsonStr = response.body?.string()
+
+                onMainDispatcher { 
+                    dialog.dismiss()
+                    
+                    if (jsonStr == null) {
+                        snackbar(getString(R.string.error_no_response)).show()
+                        return@onMainDispatcher
+                    }
+
+                    try {
+                        // 使用 Gson 解析 JSON
+                        val jsonObject = JSONObject(jsonStr)
+                        val dataObject = jsonObject.getJSONObject("data")
+                        val listArray = dataObject.getJSONArray("list")
+                        
+                        val proxies = mutableListOf<AbstractBean>()
+                        
+                        for (i in 0 until listArray.length()) {
+                            val item = listArray.getJSONObject(i)
+                            val ip = item.getString("ip")
+                            val port = item.getString("port")
+                            val account = item.getString("account")
+                            val password = item.getString("password")
+                            
+                            // 构建 socks5 链接
+                            val socksLink = "socks5://$account:$password@$ip:$port/"
+                            
+                            // 解析链接并添加到代理列表
+                            RawUpdater.parseRaw(socksLink)?.let { 
+                                proxies.addAll(it)
+                            }
+                        }
+
+                        if (proxies.isEmpty()) {
+                            snackbar(getString(R.string.no_proxies_found_in_response)).show()
+                        } else {
+                            runOnDefaultDispatcher {
+                                import(proxies)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        snackbar(e.readableMessage).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Logs.w(e)
+                onMainDispatcher {
+                    snackbar(e.readableMessage).show()
+                }
+            }
+        }
+    }
 
 }
