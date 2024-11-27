@@ -574,11 +574,11 @@
     <string name="allow_insecure_on_request_sum">Disable certificate checking when updating
         subscriptions</string>
     <string name="global_allow_insecure">Always allow insecure</string>
-    <string name="action_url">Custom Url</string>
+    <string name="action_url">输入URL</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
-    <string name="url_empty">url  is empty</string>
+    <string name="url_empty">URL不能为空</string>
     <string name="loading">loading</string>
-    <string name="error_no_response">no response</string>
-    <string name="no_proxies_found_in_response">no proxies</string>
+    <string name="error_no_response">服务器无响应</string>
+    <string name="no_proxies_found_in_response">响应中未找到代理配置</string>
 </resources>

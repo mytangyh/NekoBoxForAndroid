@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.RemoteException
+import android.util.Log
 import android.view.KeyEvent
 import android.view.MenuItem
 import androidx.activity.addCallback
@@ -34,10 +35,16 @@ import io.nekohasekai.sagernet.fmt.KryoConverters
 import io.nekohasekai.sagernet.fmt.PluginEntry
 import io.nekohasekai.sagernet.group.GroupInterfaceAdapter
 import io.nekohasekai.sagernet.group.GroupUpdater
+import io.nekohasekai.sagernet.group.RawUpdater
 import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.widget.ListHolderListener
 import moe.matsuri.nb4a.utils.Util
 import java.util.*
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : ThemedActivity(),
     SagerConnection.Callback,
@@ -80,9 +87,7 @@ class MainActivity : ThemedActivity(),
         }
 
         binding.fab.setOnClickListener {
-            if (DataStore.serviceState.canStop) SagerNet.stopService() else connect.launch(
-                null
-            )
+            toggle()
         }
         binding.stats.setOnClickListener { if (DataStore.serviceState.connected) binding.stats.testConnection() }
 
@@ -461,6 +466,111 @@ class MainActivity : ThemedActivity(),
         val fragment =
             supportFragmentManager.findFragmentById(R.id.fragment_holder) as? ToolbarFragment
         return fragment != null && fragment.onKeyDown(keyCode, event)
+    }
+
+    fun toggle() = runOnDefaultDispatcher {
+        if (DataStore.serviceState.started) {
+            SagerNet.stopService()
+        } else {
+            // 获取保存的URL
+            val savedUrl = DataStore.configurationStore.getString(ConfigurationFragment.KEY_SAVED_PROXY_URL)
+            if (savedUrl.isNullOrBlank()) {
+                onMainDispatcher {
+                    snackbar(getString(R.string.url_empty)).show()
+                }
+                return@runOnDefaultDispatcher
+            }
+
+            try {
+                // 显示加载对话框
+                val dialog = onMainDispatcher {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(R.string.loading)
+                        .setMessage(R.string.loading)
+                        .setCancelable(false)
+                        .show()
+                }
+
+                // 执行网络请求
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(10, TimeUnit.SECONDS)
+                    .build()
+                
+                val request = Request.Builder()
+                    .url(savedUrl)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val jsonStr = response.body?.string()
+                Log.d("MainActivity", "jsonStr: $jsonStr")
+
+                onMainDispatcher { 
+                    dialog.dismiss()
+                    
+                    if (jsonStr == null) {
+                        snackbar(getString(R.string.error_no_response)).show()
+                        return@onMainDispatcher
+                    }
+
+                    try {
+                        // 解析 JSON
+                        val jsonObject = JSONObject(jsonStr)
+                        val dataObject = jsonObject.getJSONObject("data")
+                        val listArray = dataObject.getJSONArray("list")
+                        
+                        if (listArray.length() == 0) {
+                            snackbar(getString(R.string.no_proxies_found_in_response)).show()
+                            return@onMainDispatcher
+                        }
+
+                        // 只获取第一条数据
+                        val item = listArray.getJSONObject(0)
+                        val ip = item.getString("ip")
+                        val port = item.getString("port")
+                        val account = item.getString("account")
+                        val password = item.getString("password")
+                        
+                        // 构建 socks5 链接
+                        val socksLink = "socks5://$account:$password@$ip:$port/"
+                        
+                        // 解析链接
+                        val proxy = RawUpdater.parseRaw(socksLink)?.firstOrNull()
+                        if (proxy == null) {
+                            snackbar(getString(R.string.no_proxies_found_in_response)).show()
+                        } else {
+                            runOnDefaultDispatcher {
+                                // 获取当前选中的代理
+                                val currentProxy = ProfileManager.getProfile(DataStore.selectedProxy)
+                                if (currentProxy == null) {
+                                    // 如果没有选中的代理，创建新的
+                                    val targetId = DataStore.selectedGroupForImport()
+                                    val proxyId = ProfileManager.createProfile(targetId, proxy).id
+                                    DataStore.selectedProxy = proxyId
+                                } else {
+                                    // 更新现有代理
+                                    currentProxy.apply {
+                                        putBean(proxy)
+                                    }
+                                    ProfileManager.updateProfile(currentProxy)
+                                }
+                                
+                                // 启动服务
+                                SagerNet.startService()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        snackbar(e.readableMessage).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Logs.w(e)
+                onMainDispatcher {
+                    snackbar(e.readableMessage).show()
+                }
+            }
+        }
     }
 
 }

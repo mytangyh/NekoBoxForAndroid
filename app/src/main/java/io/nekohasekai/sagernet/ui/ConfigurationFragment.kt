@@ -39,6 +39,7 @@ import io.nekohasekai.sagernet.aidl.TrafficData
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.bg.proto.UrlTest
 import io.nekohasekai.sagernet.database.*
+import io.nekohasekai.sagernet.database.preference.KeyValuePair
 import io.nekohasekai.sagernet.database.preference.OnPreferenceDataStoreChangeListener
 import io.nekohasekai.sagernet.databinding.LayoutAppsItemBinding
 import io.nekohasekai.sagernet.databinding.LayoutProfileListBinding
@@ -86,6 +87,11 @@ class ConfigurationFragment @JvmOverloads constructor(
     Toolbar.OnMenuItemClickListener,
     SearchView.OnQueryTextListener,
     OnPreferenceDataStoreChangeListener {
+
+    companion object {
+        public const val KEY_SAVED_PROXY_URL = "saved_proxy_url"
+        const val DEFAULT_PROXY_URL = "http://110.42.45.107:50261/json/quip"
+    }
 
     interface SelectCallback {
         fun returnProfile(profileId: Long)
@@ -204,6 +210,17 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
 
         DataStore.profileCacheStore.registerChangeListener(this)
+
+        // 检查是否已有保存的URL，如果没有则设置默认URL
+        if (DataStore.configurationStore.getString(KEY_SAVED_PROXY_URL).isNullOrBlank()) {
+            DataStore.configurationStore.putString(KEY_SAVED_PROXY_URL, DEFAULT_PROXY_URL)
+        }
+
+        // 检查是否需要自动更新
+        val savedUrl = DataStore.configurationStore.getString(KEY_SAVED_PROXY_URL)
+        if (!savedUrl.isNullOrBlank() && !DataStore.serviceState.started) {
+            importFromUrl(savedUrl, true)
+        }
     }
 
     override fun onPreferenceDataStoreChanged(store: PreferenceDataStore, key: String) {
@@ -443,6 +460,8 @@ class ConfigurationFragment @JvmOverloads constructor(
                     orientation = LinearLayout.VERTICAL
                     val editText = EditText(context)
                     editText.hint = "URL"
+                    // 显示保存的URL
+                    editText.setText(DataStore.configurationStore.getString(KEY_SAVED_PROXY_URL))
                     addView(editText)
                     dialog = MaterialAlertDialogBuilder(context)
                         .setTitle(R.string.action_url)
@@ -1742,11 +1761,14 @@ class ConfigurationFragment @JvmOverloads constructor(
             searchView.clearFocus()
         }
 
-    private fun importFromUrl(url: String) {
+    private fun importFromUrl(url: String, autoConnect: Boolean = false) {
         if (url.isBlank()) {
             snackbar(getString(R.string.url_empty)).show()
             return
         }
+
+        // 保存URL
+        DataStore.configurationStore.putString(KEY_SAVED_PROXY_URL, url)
 
         runOnDefaultDispatcher {
             try {
@@ -1781,34 +1803,55 @@ class ConfigurationFragment @JvmOverloads constructor(
                     }
 
                     try {
-                        // 使用 Gson 解析 JSON
+                        // 解析 JSON
                         val jsonObject = JSONObject(jsonStr)
                         val dataObject = jsonObject.getJSONObject("data")
                         val listArray = dataObject.getJSONArray("list")
                         
-                        val proxies = mutableListOf<AbstractBean>()
-                        
-                        for (i in 0 until listArray.length()) {
-                            val item = listArray.getJSONObject(i)
-                            val ip = item.getString("ip")
-                            val port = item.getString("port")
-                            val account = item.getString("account")
-                            val password = item.getString("password")
-                            
-                            // 构建 socks5 链接
-                            val socksLink = "socks5://$account:$password@$ip:$port/"
-                            
-                            // 解析链接并添加到代理列表
-                            RawUpdater.parseRaw(socksLink)?.let { 
-                                proxies.addAll(it)
-                            }
+                        if (listArray.length() == 0) {
+                            snackbar(getString(R.string.no_proxies_found_in_response)).show()
+                            return@onMainDispatcher
                         }
 
-                        if (proxies.isEmpty()) {
+                        // 只获取第一条数据
+                        val item = listArray.getJSONObject(0)
+                        val ip = item.getString("ip")
+                        val port = item.getString("port")
+                        val account = item.getString("account")
+                        val password = item.getString("password")
+                        
+                        // 构建 socks5 链接
+                        val socksLink = "socks5://$account:$password@$ip:$port/"
+                        
+                        // 解析链接
+                        val proxy = RawUpdater.parseRaw(socksLink)?.firstOrNull()
+                        if (proxy == null) {
                             snackbar(getString(R.string.no_proxies_found_in_response)).show()
                         } else {
                             runOnDefaultDispatcher {
-                                import(proxies)
+                                // 获取当前选中的代理
+                                val currentProxy = ProfileManager.getProfile(DataStore.selectedProxy)
+                                if (currentProxy == null) {
+                                    // 如果没有选中的代理，创建新的
+                                    val targetId = DataStore.selectedGroupForImport()
+                                    val proxyId = ProfileManager.createProfile(targetId, proxy).id
+                                    DataStore.selectedProxy = proxyId
+                                } else {
+                                    // 更新现有代理
+                                    currentProxy.apply {
+                                        putBean(proxy)
+                                    }
+                                    ProfileManager.updateProfile(currentProxy)
+                                }
+                                
+                                if (autoConnect) {
+                                    onMainDispatcher {
+                                        // 启动服务
+                                        if (!DataStore.serviceState.started) {
+                                            SagerNet.startService()
+                                        }
+                                    }
+                                }
                             }
                         }
                     } catch (e: Exception) {
