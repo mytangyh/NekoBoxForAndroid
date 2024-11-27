@@ -77,6 +77,9 @@
             <item
                 android:id="@+id/action_new_neko"
                 android:title="@string/neko_plugin" />
+            <item
+                android:id="@+id/action_import_url"
+                android:title="@string/action_url" />
         </menu>
     </item>
 

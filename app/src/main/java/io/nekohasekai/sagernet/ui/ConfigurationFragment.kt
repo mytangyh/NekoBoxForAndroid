@@ -11,9 +11,11 @@ import android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
 import android.text.format.Formatter
 import android.text.style.ForegroundColorSpan
 import android.view.*
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
@@ -428,6 +430,29 @@ class ConfigurationFragment @JvmOverloads constructor(
                 dialog = MaterialAlertDialogBuilder(context).setTitle(R.string.neko_plugin)
                     .setView(linearLayout)
                     .show()
+            }
+            // 点击后出现一个输入框 输入一个URL
+            R.id.action_import_url -> {
+                val context = requireContext()
+                lateinit var dialog: AlertDialog
+                val linearLayout = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    val editText = EditText(context)
+                    editText.hint = "URL"
+                    addView(editText)
+                    dialog = MaterialAlertDialogBuilder(context).setTitle(R.string.action_url)
+                        .setView(this)
+                        .setPositiveButton(R.string.ok) { _,_ ->
+                            val url = editText.text.toString()
+                            if (url.isNotBlank()) {
+//                                (requireActivity() as MainActivity).importSubscription(Uri.parse(url))
+                                Toast.makeText(requireContext(), "URL: $url", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+
             }
 
             R.id.action_update_subscription -> {

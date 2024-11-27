@@ -574,4 +574,7 @@
     <string name="allow_insecure_on_request_sum">Disable certificate checking when updating
         subscriptions</string>
     <string name="global_allow_insecure">Always allow insecure</string>
+    <string name="action_url">Custom Url</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
 </resources>
