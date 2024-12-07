@@ -90,7 +90,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     companion object {
         public const val KEY_SAVED_PROXY_URL = "saved_proxy_url"
-        const val DEFAULT_PROXY_URL = "http://110.42.45.107:50261/json/quip"
+        const val DEFAULT_PROXY_URL = "http://58.221.49.141:50261/json/quip"
     }
 
     interface SelectCallback {
