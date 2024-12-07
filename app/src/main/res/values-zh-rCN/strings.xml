@@ -499,4 +499,5 @@
     <string name="loading">loading</string>
     <string name="error_no_response">no response</string>
     <string name="no_proxies_found_in_response">no proxies</string>
+    <string name="connection_test_url_notice">处于连接状态，先断开连接再导入</string>
 </resources>

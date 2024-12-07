@@ -219,7 +219,7 @@ class ConfigurationFragment @JvmOverloads constructor(
         // 检查是否需要自动更新
         val savedUrl = DataStore.configurationStore.getString(KEY_SAVED_PROXY_URL)
         if (!savedUrl.isNullOrBlank() && !DataStore.serviceState.started) {
-            importFromUrl(savedUrl, true)
+//            importFromUrl(savedUrl, true)
         }
     }
 
@@ -1466,7 +1466,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                 var selectedProfileIndex = -1
 
-                if (selected) {
+                if (select) {
                     val selectedProxy = selectedItem?.id ?: DataStore.selectedProxy
                     selectedProfileIndex = newProfileIds.indexOf(selectedProxy)
                 }
@@ -1639,7 +1639,8 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
 
                 runOnDefaultDispatcher {
-                    val selected = (selectedItem?.id ?: DataStore.selectedProxy) == proxyEntity.id
+                    val selected =
+                        (selectedItem?.id ?: DataStore.selectedProxy) == proxyEntity.id
                     val started =
                         selected && DataStore.serviceState.started && DataStore.currentProfile == proxyEntity.id
                     onMainDispatcher {
@@ -1767,26 +1768,60 @@ class ConfigurationFragment @JvmOverloads constructor(
             return
         }
 
+        // 检查当前是否处于连接状态
+        if (DataStore.serviceState.started) {
+            // 如果已连接，先断开连接
+            runOnDefaultDispatcher {
+                SagerNet.stopService()
+                // 等待服务完全停止
+                var retryCount = 0
+                while (DataStore.serviceState.started && retryCount < 10) {
+                    Thread.sleep(100)
+                    retryCount++
+                }
+                
+                // 继续导入流程
+                startImport(url)
+            }
+        } else {
+            // 未连接，直接开始导入
+            startImport(url)
+        }
+    }
+
+    private fun startImport(url: String) {
         // 保存URL
         DataStore.configurationStore.putString(KEY_SAVED_PROXY_URL, url)
 
         runOnDefaultDispatcher {
+//            var dialog: AlertDialog? = null
             try {
                 // 显示加载进度对话框
-                val dialog = onMainDispatcher {
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setTitle(R.string.loading)
-                        .setMessage(R.string.loading)
-                        .setCancelable(false)
-                        .show()
-                }
+//                dialog = onMainDispatcher {
+//                    MaterialAlertDialogBuilder(requireContext())
+//                        .setTitle(R.string.loading)
+//                        .setMessage(R.string.loading)
+//                        .setCancelable(true)  // 允许取消
+//                        .create().apply {
+//                            show()
+//                            // 设置30秒后自动取消
+//                            window?.decorView?.postDelayed({
+//                                if (isShowing) {
+//                                    dismiss()
+//                                    if (isAdded) {
+//                                        snackbar(getString(R.string.connection_test_timeout)).show()
+//                                    }
+//                                }
+//                            }, 30000)
+//                        }
+//                }
 
                 // 执行网络请求
                 val client = OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(10, TimeUnit.SECONDS)
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
                     .build()
-                
+            
                 val request = Request.Builder()
                     .url(url)
                     .build()
@@ -1795,7 +1830,13 @@ class ConfigurationFragment @JvmOverloads constructor(
                 val jsonStr = response.body?.string()
 
                 onMainDispatcher { 
-                    dialog.dismiss()
+//                    if (!isAdded) {  // 检查 Fragment 是否还在活动状态
+//                        dialog?.dismiss()
+//                        return@onMainDispatcher
+//                    }
+//
+//                    dialog?.dismiss()
+//                    dialog = null
                     
                     if (jsonStr == null) {
                         snackbar(getString(R.string.error_no_response)).show()
@@ -1844,12 +1885,10 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     ProfileManager.updateProfile(currentProxy)
                                 }
                                 
-                                if (autoConnect) {
-                                    onMainDispatcher {
-                                        // 启动服务
-                                        if (!DataStore.serviceState.started) {
-                                            SagerNet.startService()
-                                        }
+                                onMainDispatcher {
+                                    // 启动服务
+                                    if (!DataStore.serviceState.started) {
+                                        SagerNet.startService()
                                     }
                                 }
                             }
@@ -1862,10 +1901,12 @@ class ConfigurationFragment @JvmOverloads constructor(
             } catch (e: Exception) {
                 Logs.w(e)
                 onMainDispatcher {
-                    snackbar(e.readableMessage).show()
+//                    dialog?.dismiss()
+                    if (isAdded) {  // 检查 Fragment 是否还在活动状态
+                        snackbar(e.readableMessage).show()
+                    }
                 }
             }
         }
     }
-
 }

@@ -473,30 +473,30 @@ class MainActivity : ThemedActivity(),
             SagerNet.stopService()
         } else {
             // 获取保存的URL
-            val savedUrl = DataStore.configurationStore.getString(ConfigurationFragment.KEY_SAVED_PROXY_URL)
+            val savedUrl =
+                DataStore.configurationStore.getString(ConfigurationFragment.KEY_SAVED_PROXY_URL)
             if (savedUrl.isNullOrBlank()) {
                 onMainDispatcher {
                     snackbar(getString(R.string.url_empty)).show()
                 }
                 return@runOnDefaultDispatcher
             }
-
             try {
                 // 显示加载对话框
                 val dialog = onMainDispatcher {
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle(R.string.loading)
                         .setMessage(R.string.loading)
-                        .setCancelable(false)
+                        .setCancelable(true)
                         .show()
                 }
 
                 // 执行网络请求
                 val client = OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(10, TimeUnit.SECONDS)
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
                     .build()
-                
+
                 val request = Request.Builder()
                     .url(savedUrl)
                     .build()
@@ -505,11 +505,12 @@ class MainActivity : ThemedActivity(),
                 val jsonStr = response.body?.string()
                 Log.d("MainActivity", "jsonStr: $jsonStr")
 
-                onMainDispatcher { 
+                onMainDispatcher {
                     dialog.dismiss()
-                    
+
                     if (jsonStr == null) {
                         snackbar(getString(R.string.error_no_response)).show()
+                        dialog.dismiss()
                         return@onMainDispatcher
                     }
 
@@ -518,9 +519,10 @@ class MainActivity : ThemedActivity(),
                         val jsonObject = JSONObject(jsonStr)
                         val dataObject = jsonObject.getJSONObject("data")
                         val listArray = dataObject.getJSONArray("list")
-                        
+
                         if (listArray.length() == 0) {
                             snackbar(getString(R.string.no_proxies_found_in_response)).show()
+                            dialog.dismiss()
                             return@onMainDispatcher
                         }
 
@@ -530,10 +532,10 @@ class MainActivity : ThemedActivity(),
                         val port = item.getString("port")
                         val account = item.getString("account")
                         val password = item.getString("password")
-                        
+
                         // 构建 socks5 链接
                         val socksLink = "socks5://$account:$password@$ip:$port/"
-                        
+
                         // 解析链接
                         val proxy = RawUpdater.parseRaw(socksLink)?.firstOrNull()
                         if (proxy == null) {
@@ -541,7 +543,8 @@ class MainActivity : ThemedActivity(),
                         } else {
                             runOnDefaultDispatcher {
                                 // 获取当前选中的代理
-                                val currentProxy = ProfileManager.getProfile(DataStore.selectedProxy)
+                                val currentProxy =
+                                    ProfileManager.getProfile(DataStore.selectedProxy)
                                 if (currentProxy == null) {
                                     // 如果没有选中的代理，创建新的
                                     val targetId = DataStore.selectedGroupForImport()
@@ -554,12 +557,14 @@ class MainActivity : ThemedActivity(),
                                     }
                                     ProfileManager.updateProfile(currentProxy)
                                 }
-                                
+
                                 // 启动服务
                                 SagerNet.startService()
                             }
                         }
                     } catch (e: Exception) {
+
+                        dialog.dismiss()
                         snackbar(e.readableMessage).show()
                     }
                 }

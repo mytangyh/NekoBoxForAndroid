@@ -581,4 +581,5 @@
     <string name="loading">loading</string>
     <string name="error_no_response">服务器无响应</string>
     <string name="no_proxies_found_in_response">响应中未找到代理配置</string>
+    <string name="connection_test_url_notice">is in connection status</string>
 </resources>
